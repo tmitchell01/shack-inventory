@@ -310,7 +310,7 @@ function renderScan(main){
       <button class="btn secondary" id="captureBtn" style="margin-top:12px;">📸 Capture & Try Hard</button>
       <div class="scanmsg mono" id="engineLabel" style="font-size:10px;opacity:0.5;margin-top:10px;">Engine: detecting…</div>
       <div class="scanmsg mono" id="resLabel" style="font-size:9px;opacity:0.4;margin-top:2px;">Camera: —</div>
-      <div class="scanmsg mono" style="font-size:9px;opacity:0.35;margin-top:2px;">Build: 2026-06-20-capture-v4</div>
+      <div class="scanmsg mono" style="font-size:9px;opacity:0.35;margin-top:2px;">Build: 2026-06-20-capturefix-v5</div>
       <canvas id="scanCanvas" style="display:none;"></canvas>
     </div>
     <div class="panel">
@@ -397,8 +397,12 @@ function updateEngineLabel(){
   el.textContent = nativeAvailable ? 'Engine: Apple Vision + jsQR' : 'Engine: jsQR only';
 }
 
+const CAPTURE_MAX_DIM = 1100; // higher than the continuous loop's cap (more detail for a one-off attempt) but still bounded — full native res was ~5x more pixels than needed and made this hang on slower devices
+
 function grabRawFrame(video){
-  const w = video.videoWidth, h = video.videoHeight;
+  const vw = video.videoWidth, vh = video.videoHeight;
+  const scale = Math.min(1, CAPTURE_MAX_DIM / Math.max(vw, vh));
+  const w = Math.max(1, Math.round(vw*scale)), h = Math.max(1, Math.round(vh*scale));
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
   const ctx = c.getContext('2d', {willReadFrequently:true});
@@ -425,6 +429,13 @@ function sharpnessScore(gray, w, h){
   return score;
 }
 
+function withTimeout(promise, ms){
+  return Promise.race([
+    promise,
+    new Promise((_,reject)=>setTimeout(()=>reject(new Error('timeout')), ms))
+  ]);
+}
+
 async function captureAndTryHard(){
   const video = document.getElementById('video');
   const msgEl = document.getElementById('scanMsg');
@@ -436,6 +447,25 @@ async function captureAndTryHard(){
   btn.disabled = true;
   btn.textContent = '📸 Capturing…';
 
+  try{
+    await withTimeout(runCaptureAttempts(video, msgEl), 10000);
+  }catch(e){
+    if(e && e.message === 'timeout'){
+      msgEl.textContent = 'That took too long — try manual entry below, or try again.';
+      showToast('Capture timed out');
+    } else {
+      msgEl.textContent = 'Something went wrong — try manual entry below, or try again.';
+      showToast('Capture failed unexpectedly');
+    }
+  }finally{
+    // No matter what happened above — success, failure, error, or timeout —
+    // the button always comes back. This is the fix for the stuck-forever bug.
+    btn.disabled = false;
+    btn.textContent = '📸 Capture & Try Hard';
+  }
+}
+
+async function runCaptureAttempts(video, msgEl){
   // Burst of frames a little apart in time — gives a few chances to dodge
   // hand-shake/motion blur, since the live feed often differs frame-to-frame.
   const frames = [];
@@ -451,8 +481,6 @@ async function captureAndTryHard(){
     {tiles:12, clip:3.0},
     {tiles:8,  clip:3.0},
     {tiles:10, clip:2.0},
-    {tiles:16, clip:4.0},
-    {tiles:6,  clip:2.0},
   ];
 
   msgEl.textContent = 'Trying several enhancement passes…';
@@ -484,8 +512,6 @@ async function captureAndTryHard(){
     }
   }
 
-  btn.disabled = false;
-  btn.textContent = '📸 Capture & Try Hard';
   if(found){
     msgEl.textContent = 'Point camera at an item or bin label';
     handleScanResult(found);
