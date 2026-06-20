@@ -307,6 +307,7 @@ function renderScan(main){
       <div class="scanwrap"><video id="video" playsinline muted autoplay></video><div class="reticle"></div></div>
       <div class="scanmsg" id="scanMsg">Point camera at an item or bin label</div>
       <div class="scanmsg" style="font-size:11px;opacity:0.7;margin-top:2px;">Tip: fill most of the bracket with just the QR code, hold steady for a second, avoid glare on the label</div>
+      <div class="scanmsg mono" id="engineLabel" style="font-size:10px;opacity:0.5;margin-top:6px;">Engine: detecting…</div>
       <canvas id="scanCanvas" style="display:none;"></canvas>
     </div>
     <div class="panel">
@@ -328,9 +329,10 @@ function renderScan(main){
   startScanner();
 }
 
-let useNativeDetector = false;
+let nativeAvailable = false;
 let barcodeDetector = null;
 let detectBusy = false;
+let nativeErrorCount = 0;
 
 async function startScanner(){
   const video = document.getElementById('video');
@@ -355,27 +357,25 @@ async function startScanner(){
       }
     }catch(e){}
 
-    // Prefer the browser's native barcode engine (on iOS Safari this is backed by
-    // Apple's own Vision framework — the same engine the Camera app uses — which
-    // is far more reliable than the pure-JS jsQR fallback below.
-    useNativeDetector = false;
+    // Feature-detect the browser's native barcode engine (on iOS Safari this is
+    // backed by Apple's own Vision framework). It runs ALONGSIDE jsQR below,
+    // never instead of it — if the native engine is flaky or gated behind a
+    // disabled feature flag, jsQR still runs every single frame regardless.
+    nativeAvailable = false;
+    nativeErrorCount = 0;
     if('BarcodeDetector' in window){
       try{
         const formats = await BarcodeDetector.getSupportedFormats();
         if(formats.includes('qr_code')){
           barcodeDetector = new BarcodeDetector({formats:['qr_code']});
-          useNativeDetector = true;
+          nativeAvailable = true;
         }
       }catch(e){}
     }
+    updateEngineLabel();
 
     scanLoopActive = true;
-    if(useNativeDetector){
-      document.getElementById('scanMsg').textContent = 'Point camera at an item or bin label';
-      nativeDetectLoop(video);
-    } else {
-      requestAnimationFrame(()=>scanLoop(video, canvas));
-    }
+    requestAnimationFrame(()=>scanLoop(video, canvas));
   }catch(e){
     document.getElementById('scanMsg').textContent = 'Camera unavailable — use manual entry below.';
   }
@@ -385,23 +385,12 @@ function stopScanner(){
   detectBusy = false;
   if(scanStream){ scanStream.getTracks().forEach(t=>t.stop()); scanStream=null; }
 }
-let lastHit = 0;
-
-async function nativeDetectLoop(video){
-  if(!scanLoopActive || currentTab!=='scan') return;
-  if(!detectBusy && video.readyState===video.HAVE_ENOUGH_DATA){
-    detectBusy = true;
-    try{
-      const codes = await barcodeDetector.detect(video);
-      if(codes && codes.length && Date.now()-lastHit>1200){
-        lastHit = Date.now();
-        handleScanResult(codes[0].rawValue);
-      }
-    }catch(e){}
-    detectBusy = false;
-  }
-  requestAnimationFrame(()=>nativeDetectLoop(video));
+function updateEngineLabel(){
+  const el = document.getElementById('engineLabel');
+  if(!el) return;
+  el.textContent = nativeAvailable ? 'Engine: Apple Vision + jsQR' : 'Engine: jsQR only';
 }
+let lastHit = 0;
 
 function scanLoop(video, canvas){
   if(!scanLoopActive || currentTab!=='scan') return;
@@ -410,11 +399,27 @@ function scanLoop(video, canvas){
     const ctx = canvas.getContext('2d');
     ctx.filter = 'contrast(1.35) brightness(1.05)';
     ctx.drawImage(video,0,0,canvas.width,canvas.height);
+
+    // jsQR runs every frame as the guaranteed baseline — fast and synchronous.
     const imgData = ctx.getImageData(0,0,canvas.width,canvas.height);
     const code = jsQR(imgData.data, imgData.width, imgData.height, {inversionAttempts:'attemptBoth'});
     if(code && code.data && Date.now()-lastHit>1200){
       lastHit = Date.now();
       handleScanResult(code.data);
+    } else if(nativeAvailable && !detectBusy){
+      // Opportunistic parallel pass with the native engine — only fires when
+      // jsQR didn't already find something this frame. Errors here just get
+      // counted, never silently disable the jsQR pass above.
+      detectBusy = true;
+      barcodeDetector.detect(canvas).then(codes=>{
+        if(codes && codes.length && Date.now()-lastHit>1200){
+          lastHit = Date.now();
+          handleScanResult(codes[0].rawValue);
+        }
+      }).catch(()=>{
+        nativeErrorCount++;
+        if(nativeErrorCount>30){ nativeAvailable=false; updateEngineLabel(); }
+      }).finally(()=>{ detectBusy = false; });
     }
   }
   requestAnimationFrame(()=>scanLoop(video, canvas));
