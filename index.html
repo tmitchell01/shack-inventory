@@ -11,8 +11,44 @@
 <meta name="apple-mobile-web-app-title" content="Shack Inv">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="icon" href="icon-192.png">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+// jsQR and QRCode are loaded from a CDN. If a content blocker, privacy
+// extension, or network issue prevents that, the app would otherwise fail
+// silently with a confusing "Can't find variable" error deep in the scan
+// loop. This loader tries a couple of mirrors and exposes a clear,
+// app-wide flag + banner if loading genuinely fails everywhere.
+window.LIB_LOAD_ERROR = null;
+function loadScriptWithFallback(urls, checkFn, label){
+  return new Promise((resolve) => {
+    let i = 0;
+    function tryNext(){
+      if(checkFn()){ resolve(true); return; }
+      if(i >= urls.length){
+        window.LIB_LOAD_ERROR = (window.LIB_LOAD_ERROR ? window.LIB_LOAD_ERROR + ' / ' : '') + label;
+        resolve(false);
+        return;
+      }
+      const url = urls[i++];
+      const s = document.createElement('script');
+      s.src = url;
+      s.onload = () => { if(checkFn()) resolve(true); else tryNext(); };
+      s.onerror = tryNext;
+      document.head.appendChild(s);
+    }
+    tryNext();
+  });
+}
+window.LIBS_READY = Promise.all([
+  loadScriptWithFallback([
+    'https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.js',
+    'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js'
+  ], () => typeof window.jsQR === 'function', 'QR scanner library'),
+  loadScriptWithFallback([
+    'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js',
+    'https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js'
+  ], () => typeof window.QRCode === 'function', 'QR label generator')
+]);
+</script>
 <style>
   :root{
     --bg:#15181a;
@@ -310,7 +346,7 @@ function renderScan(main){
       <button class="btn secondary" id="captureBtn" style="margin-top:12px;">📸 Capture & Try Hard</button>
       <div class="scanmsg mono" id="engineLabel" style="font-size:10px;opacity:0.5;margin-top:10px;">Engine: detecting…</div>
       <div class="scanmsg mono" id="resLabel" style="font-size:9px;opacity:0.4;margin-top:2px;">Camera: —</div>
-      <div class="scanmsg mono" style="font-size:9px;opacity:0.35;margin-top:2px;">Build: 2026-06-20-errorlog-v6</div>
+      <div class="scanmsg mono" style="font-size:9px;opacity:0.35;margin-top:2px;">Build: 2026-06-20-cdnfallback-v7</div>
       <canvas id="scanCanvas" style="display:none;"></canvas>
     </div>
     <div class="panel">
@@ -342,6 +378,13 @@ async function startScanner(){
   const video = document.getElementById('video');
   const canvas = document.getElementById('scanCanvas');
   if(!video) return;
+  document.getElementById('scanMsg').textContent = 'Loading scanner…';
+  await window.LIBS_READY;
+  if(typeof window.jsQR !== 'function'){
+    document.getElementById('scanMsg').textContent =
+      "Couldn't load the scanner library — this usually means a content blocker or privacy extension is blocking cdnjs.cloudflare.com / jsdelivr.net. Try disabling content blockers for this site, or use a browser without extensions. Manual entry below still works.";
+    return;
+  }
   try{
     scanStream = await navigator.mediaDevices.getUserMedia({
       video:{
@@ -440,6 +483,10 @@ async function captureAndTryHard(){
   const video = document.getElementById('video');
   const msgEl = document.getElementById('scanMsg');
   const btn = document.getElementById('captureBtn');
+  if(typeof jsQR !== 'function'){
+    showToast("Scanner library didn't load — check for content blockers");
+    return;
+  }
   if(!video || video.readyState !== video.HAVE_ENOUGH_DATA){
     showToast('Camera not ready yet');
     return;
@@ -628,28 +675,32 @@ function getCorrectedFrame(video){
 
 function scanLoop(video, canvas){
   if(!scanLoopActive || currentTab!=='scan') return;
-  if(video.readyState===video.HAVE_ENOUGH_DATA){
-    const frame = getCorrectedFrame(video);
+  try{
+    if(video.readyState===video.HAVE_ENOUGH_DATA && typeof jsQR==='function'){
+      const frame = getCorrectedFrame(video);
 
-    // jsQR runs every frame as the guaranteed baseline — fast and synchronous.
-    const code = jsQR(frame.data, frame.width, frame.height, {inversionAttempts:'attemptBoth'});
-    if(code && code.data && Date.now()-lastHit>1200){
-      lastHit = Date.now();
-      handleScanResult(code.data);
-    } else if(nativeAvailable && !detectBusy){
-      // Opportunistic parallel pass with the native engine, on the raw (uncorrected)
-      // frame — only fires when jsQR didn't already find something this frame.
-      detectBusy = true;
-      barcodeDetector.detect(frame.rawCanvas).then(codes=>{
-        if(codes && codes.length && Date.now()-lastHit>1200){
-          lastHit = Date.now();
-          handleScanResult(codes[0].rawValue);
-        }
-      }).catch(()=>{
-        nativeErrorCount++;
-        if(nativeErrorCount>30){ nativeAvailable=false; updateEngineLabel(); }
-      }).finally(()=>{ detectBusy = false; });
+      // jsQR runs every frame as the guaranteed baseline — fast and synchronous.
+      const code = jsQR(frame.data, frame.width, frame.height, {inversionAttempts:'attemptBoth'});
+      if(code && code.data && Date.now()-lastHit>1200){
+        lastHit = Date.now();
+        handleScanResult(code.data);
+      } else if(nativeAvailable && !detectBusy){
+        // Opportunistic parallel pass with the native engine, on the raw (uncorrected)
+        // frame — only fires when jsQR didn't already find something this frame.
+        detectBusy = true;
+        barcodeDetector.detect(frame.rawCanvas).then(codes=>{
+          if(codes && codes.length && Date.now()-lastHit>1200){
+            lastHit = Date.now();
+            handleScanResult(codes[0].rawValue);
+          }
+        }).catch(()=>{
+          nativeErrorCount++;
+          if(nativeErrorCount>30){ nativeAvailable=false; updateEngineLabel(); }
+        }).finally(()=>{ detectBusy = false; });
+      }
     }
+  }catch(e){
+    // Never let an unexpected error silently kill the scan loop — keep going.
   }
   requestAnimationFrame(()=>scanLoop(video, canvas));
 }
@@ -845,6 +896,16 @@ function renderResultsOnly(){
 }
 function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 
+function safeQRCode(target, opts){
+  if(typeof window.QRCode === 'function'){
+    try{ new QRCode(target, opts); return true; }catch(e){}
+  }
+  // Fallback: no QR image library available — at least show the code as text
+  // so the record is still usable (can be typed into manual entry elsewhere).
+  target.innerHTML = `<div style="padding:14px;border:1.5px dashed #999;border-radius:8px;font-family:'JetBrains Mono',monospace;font-weight:800;font-size:15px;color:#15181a;background:#fff;">${escapeHtml(opts.text)}</div>`;
+  return false;
+}
+
 /* ============ DETAIL MODAL ============ */
 function openDetail(id){
   const rec = findById(id);
@@ -877,7 +938,7 @@ function openDetail(id){
       </div>
     </div>
   `;
-  new QRCode(document.getElementById('qrHolder'), {text: rec.code, width:140, height:140, colorDark:'#15181a', colorLight:'#ffffff'});
+  safeQRCode(document.getElementById('qrHolder'), {text: rec.code, width:140, height:140, colorDark:'#15181a', colorLight:'#ffffff'});
   document.getElementById('closeX').addEventListener('click', closeModal);
   document.getElementById('modalBg').addEventListener('click', (e)=>{ if(e.target.id==='modalBg') closeModal(); });
   document.getElementById('editBtn').addEventListener('click', ()=>{
@@ -916,7 +977,12 @@ function downloadQrPng(text, filename){
   const tmp = document.createElement('div');
   tmp.style.position='fixed'; tmp.style.left='-9999px';
   document.body.appendChild(tmp);
-  new QRCode(tmp, {text, width:600, height:600, colorDark:'#000000', colorLight:'#ffffff'});
+  const ok = safeQRCode(tmp, {text, width:600, height:600, colorDark:'#000000', colorLight:'#ffffff'});
+  if(!ok){
+    showToast("Can't generate a QR image right now — code is " + text + " (use manual entry)");
+    tmp.remove();
+    return;
+  }
   setTimeout(()=>{
     const canvas = tmp.querySelector('canvas');
     if(canvas){
@@ -943,7 +1009,7 @@ function openLabelPreview(rec){
       </div>
     </div>
   `;
-  new QRCode(document.getElementById('qrHolder2'), {text: rec.code, width:160, height:160, colorDark:'#15181a', colorLight:'#ffffff'});
+  safeQRCode(document.getElementById('qrHolder2'), {text: rec.code, width:160, height:160, colorDark:'#15181a', colorLight:'#ffffff'});
   document.getElementById('closeX2').addEventListener('click', ()=>{ closeModal(); currentTab='list'; render(); });
   document.getElementById('doneBtn').addEventListener('click', ()=>{ closeModal(); currentTab='list'; render(); });
   document.getElementById('goLabels').addEventListener('click', ()=>{ closeModal(); currentTab='labels'; render(); });

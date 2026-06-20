@@ -1,11 +1,13 @@
-const CACHE_NAME = 'shack-inventory-v3';
+const CACHE_NAME = 'shack-inventory-v4';
 const APP_SHELL = [
   './index.html',
   './manifest.json',
   './icon-192.png',
   './icon-512.png',
   'https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.js',
-  'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js'
+  'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js',
+  'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js',
+  'https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js'
 ];
 
 self.addEventListener('install', (event) => {
