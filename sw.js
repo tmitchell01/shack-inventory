@@ -1,4 +1,4 @@
-const CACHE_NAME = 'shack-inventory-v1';
+const CACHE_NAME = 'shack-inventory-v2';
 const APP_SHELL = [
   './index.html',
   './manifest.json',
@@ -28,11 +28,32 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Cache-first for the app shell and CDN libraries, falling back to network.
-// Anything fetched successfully gets cached for next time (covers CDN libs
-// and any future assets), so the app keeps working with no signal at all.
+// Page navigations and index.html: NETWORK-FIRST. This is the file most likely
+// to change as the app gets updated, so we always try the network first and
+// only fall back to the cached copy if there's no connection at all. Without
+// this, updates could get stuck behind a stale cached index.html indefinitely.
+//
+// Everything else (icons, manifest, CDN libraries): CACHE-FIRST, since these
+// rarely change and this is what makes the app load instantly offline.
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
+
+  const isHtmlOrNav = event.request.mode === 'navigate' ||
+                       event.request.url.endsWith('.html') ||
+                       event.request.url.endsWith('/');
+
+  if (isHtmlOrNav) {
+    event.respondWith(
+      fetch(event.request).then((response) => {
+        if (response && response.status === 200) {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+        }
+        return response;
+      }).catch(() => caches.match(event.request).then((c) => c || caches.match('./index.html')))
+    );
+    return;
+  }
 
   event.respondWith(
     caches.match(event.request).then((cached) => {
@@ -43,12 +64,7 @@ self.addEventListener('fetch', (event) => {
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
         }
         return response;
-      }).catch(() => {
-        // Offline and not cached — for navigations, fall back to the shell.
-        if (event.request.mode === 'navigate') {
-          return caches.match('./index.html');
-        }
-      });
+      }).catch(() => {});
     })
   );
 });
