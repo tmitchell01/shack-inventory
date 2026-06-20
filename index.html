@@ -1,0 +1,919 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Shack Inventory</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#15181a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Shack Inv">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="icon-192.png">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+  :root{
+    --bg:#15181a;
+    --panel:#1f2426;
+    --panel-2:#262c2e;
+    --line:#33393b;
+    --amber:#ff9d2f;
+    --amber-dim:#8a5a22;
+    --led:#5ec9a3;
+    --red:#e1543f;
+    --text:#e8e6e1;
+    --muted:#8b9194;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html{-webkit-text-size-adjust:100%; text-size-adjust:100%;}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
+    font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;}
+  html{height:100%;}
+  body{display:flex;flex-direction:column;min-height:100vh;}
+  .mono{font-family:'JetBrains Mono','SF Mono',Menlo,monospace;}
+
+  header.top{
+    padding:14px 16px 10px;
+    border-bottom:1px solid var(--line);
+    background:linear-gradient(180deg,#1a1e20,#15181a);
+    position:sticky;top:0;z-index:20;
+  }
+  .brandrow{display:flex;align-items:center;justify-content:space-between;}
+  .brand{font-family:'JetBrains Mono',monospace;font-weight:700;letter-spacing:0.5px;font-size:15px;}
+  .brand .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--led);
+    box-shadow:0 0 6px var(--led);margin-right:8px;}
+  .sync{font-size:10.5px;color:var(--muted);font-family:'JetBrains Mono',monospace;display:flex;align-items:center;gap:5px;}
+  .sync.bad{color:var(--red);}
+  .sync .sdot{width:6px;height:6px;border-radius:50%;background:var(--led);}
+  .sync.bad .sdot{background:var(--red);}
+
+  nav.tabs{display:flex;gap:0;border-bottom:1px solid var(--line);background:var(--bg);
+    position:relative;z-index:19;overflow:hidden;width:100%;}
+  nav.tabs button{
+    flex:1 1 0;width:0;min-width:0;padding:10px 1px 9px;background:none;border:none;color:var(--muted);
+    font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:0.2px;text-transform:uppercase;
+    border-bottom:2px solid transparent;white-space:nowrap;overflow:hidden;text-overflow:clip;
+  }
+  nav.tabs button.active{color:var(--amber);border-bottom-color:var(--amber);}
+
+  main{flex:1;padding:16px;max-width:640px;width:100%;margin:0 auto;padding-bottom:90px;}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:12px;}
+  .panel h3{margin:0 0 10px;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--amber);font-family:'JetBrains Mono',monospace;}
+
+  input,select,textarea{
+    width:100%;background:var(--panel-2);border:1px solid var(--line);color:var(--text);
+    padding:10px 11px;border-radius:7px;font-size:15px;margin-bottom:9px;font-family:inherit;
+  }
+  textarea{resize:vertical;min-height:50px;}
+  label.fl{display:block;font-size:11px;color:var(--muted);margin-bottom:4px;font-family:'JetBrains Mono',monospace;letter-spacing:0.3px;}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+
+  button.btn{
+    background:var(--amber);color:#1a1208;border:none;padding:11px 16px;border-radius:8px;
+    font-weight:700;font-size:14px;cursor:pointer;width:100%;
+  }
+  button.btn.secondary{background:var(--panel-2);color:var(--text);border:1px solid var(--line);}
+  button.btn.danger{background:var(--red);color:#fff;}
+  button.btn.sm{width:auto;padding:7px 12px;font-size:12.5px;}
+
+  .itemcard{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:8px;
+    display:flex;justify-content:space-between;align-items:center;gap:10px;cursor:pointer;}
+  .itemcard:active{border-color:var(--amber-dim);}
+  .ic-left{min-width:0;}
+  .ic-name{font-weight:600;font-size:14.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .ic-meta{font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:2px;}
+  .pill{display:inline-block;font-size:9.5px;font-family:'JetBrains Mono',monospace;text-transform:uppercase;
+    padding:2px 7px;border-radius:20px;border:1px solid var(--line);color:var(--muted);letter-spacing:0.4px;}
+  .pill.bin{color:var(--led);border-color:var(--led);}
+  .pill.cat-transceiver{color:#ff9d2f;border-color:#ff9d2f;}
+  .pill.cat-antenna{color:#7fb8ff;border-color:#7fb8ff;}
+  .pill.cat-cable{color:#c98bff;border-color:#c98bff;}
+  .pill.cat-connector{color:#ffd166;border-color:#ffd166;}
+  .pill.cat-battery{color:#ff6b81;border-color:#ff6b81;}
+  .pill.cat-other{color:var(--muted);border-color:var(--line);}
+
+  .codebadge{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--amber);}
+
+  /* scanner */
+  .scanwrap{position:relative;border-radius:12px;overflow:hidden;background:#000;aspect-ratio:1/1;max-width:340px;margin:0 auto;}
+  video{width:100%;height:100%;object-fit:cover;display:block;}
+  .reticle{position:absolute;inset:18%;border:2px solid var(--amber);border-radius:14px;pointer-events:none;
+    box-shadow:0 0 0 1000px rgba(0,0,0,0.35);}
+  .scanmsg{text-align:center;color:var(--muted);font-size:13px;margin-top:12px;}
+
+  .empty{text-align:center;padding:40px 16px;color:var(--muted);}
+  .empty .big{font-size:13px;font-family:'JetBrains Mono',monospace;color:var(--amber);margin-bottom:6px;letter-spacing:0.5px;}
+
+  .searchbar{display:flex;gap:8px;margin-bottom:12px;}
+  .filterrow{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;}
+  .filterchip{font-family:'JetBrains Mono',monospace;font-size:10.5px;text-transform:uppercase;
+    padding:6px 10px;border-radius:20px;border:1px solid var(--line);color:var(--muted);background:var(--panel-2);}
+  .filterchip.active{border-color:var(--amber);color:var(--amber);}
+
+  .labelcard{
+    background:#fff;color:#15181a;border-radius:8px;padding:10px;display:flex;align-items:center;gap:10px;
+    border:1.5px dashed #999;
+  }
+  .labelcard .ltext{flex:1;min-width:0;}
+  .labelcard .lname{font-weight:800;font-size:12px;line-height:1.2;}
+  .labelcard .lcode{font-family:'JetBrains Mono',monospace;font-size:10px;color:#555;margin-top:2px;}
+  .labelgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+
+  .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:flex-end;justify-content:center;z-index:50;}
+  .modal{background:var(--panel);border:1px solid var(--line);border-top-left-radius:16px;border-top-right-radius:16px;
+    padding:18px 16px 24px;width:100%;max-width:640px;max-height:88vh;overflow-y:auto;}
+  .modal h2{margin:0 0 12px;font-size:16px;}
+  .closebar{display:flex;justify-content:flex-end;}
+  .closebar span{color:var(--muted);font-size:13px;}
+
+  .bottomnav{position:fixed;bottom:0;left:0;right:0;background:var(--bg);border-top:1px solid var(--line);
+    display:flex;padding:8px 12px calc(8px + env(safe-area-inset-bottom));gap:8px;z-index:30;max-width:640px;margin:0 auto;}
+  .bottomnav button{flex:1;}
+
+  .toast{position:fixed;top:54px;left:50%;transform:translateX(-50%);background:var(--panel-2);border:1px solid var(--amber);
+    color:var(--amber);padding:8px 16px;border-radius:30px;font-size:12.5px;font-family:'JetBrains Mono',monospace;z-index:60;
+    box-shadow:0 4px 14px rgba(0,0,0,0.4);}
+
+  @media print{
+    body *{visibility:hidden;}
+    #printArea, #printArea *{visibility:visible;}
+    #printArea{position:absolute;top:0;left:0;width:100%;}
+    .bottomnav,header.top,nav.tabs{display:none !important;}
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="brandrow">
+    <div class="brand"><span class="dot"></span>SHACK INVENTORY</div>
+    <div class="sync mono" id="syncStatus"><span class="sdot"></span><span id="syncText">saved on device</span></div>
+  </div>
+</header>
+
+<nav class="tabs">
+  <button data-tab="scan" class="active">Scan</button>
+  <button data-tab="list">Inventory</button>
+  <button data-tab="add">Add</button>
+  <button data-tab="labels">Labels</button>
+  <button data-tab="backup">Backup</button>
+</nav>
+
+<main id="main"></main>
+
+<div id="modalRoot"></div>
+<div id="toastRoot"></div>
+
+<script>
+/* ============ DATA LAYER ============ */
+const CATS = [
+  {key:'transceiver', label:'Transceiver', prefix:'TRX'},
+  {key:'antenna', label:'Antenna', prefix:'ANT'},
+  {key:'cable', label:'Cable', prefix:'CAB'},
+  {key:'connector', label:'Connector', prefix:'CON'},
+  {key:'battery', label:'Battery', prefix:'BAT'},
+  {key:'other', label:'Other', prefix:'OTH'},
+];
+const BIN_PREFIX = 'BIN';
+
+const LABEL_SIZES = [
+  {key:'xs', label:'20×10mm · tiny', w:20, h:10, defaultFor:['connector']},
+  {key:'sm', label:'30×20mm · small', w:30, h:20, defaultFor:['battery']},
+  {key:'md', label:'40×30mm · standard', w:40, h:30, defaultFor:['cable','transceiver','other']},
+  {key:'lg', label:'50×30mm · large', w:50, h:30, defaultFor:['antenna','bin']},
+];
+function labelSizeMeta(key){ return LABEL_SIZES.find(s=>s.key===key) || LABEL_SIZES[2]; }
+function defaultLabelSize(catOrType){
+  const m = LABEL_SIZES.find(s=>s.defaultFor.includes(catOrType));
+  return m ? m.key : 'md';
+}
+
+let items = [];          // all records (items + bins)
+let counters = {};        // prefix -> next number
+let storageOK = true;
+let currentTab = 'scan';
+let editingId = null;
+let scanStream = null;
+let scanLoopActive = false;
+
+const STORE_KEY = 'inv:items:v1';
+const COUNTER_KEY = 'inv:counters:v1';
+
+async function loadAll(){
+  try{
+    const raw = localStorage.getItem(STORE_KEY);
+    items = raw ? JSON.parse(raw) : [];
+  }catch(e){ items = []; }
+  try{
+    const raw2 = localStorage.getItem(COUNTER_KEY);
+    counters = raw2 ? JSON.parse(raw2) : {};
+  }catch(e){ counters = {}; }
+  setSync(true);
+  render();
+  handleIncomingCode();
+}
+
+function handleIncomingCode(){
+  try{
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('code') || params.get('scan');
+    if(!code) return;
+    const rec = findByCode(code);
+    currentTab = 'list'; render();
+    if(rec){
+      openDetail(rec.id);
+      if(navigator.vibrate) navigator.vibrate(60);
+    } else {
+      showToast('No record found for ' + code);
+    }
+    // clean the URL so re-running the Shortcut later (or a reload) doesn't reopen stale results
+    history.replaceState(null, '', window.location.pathname);
+  }catch(e){}
+}
+
+async function persist(){
+  try{
+    localStorage.setItem(STORE_KEY, JSON.stringify(items));
+    setSync(true);
+  }catch(e){
+    setSync(false);
+  }
+}
+async function persistCounters(){
+  try{ localStorage.setItem(COUNTER_KEY, JSON.stringify(counters)); }catch(e){}
+}
+
+function setSync(ok){
+  storageOK = ok;
+  const el = document.getElementById('syncStatus');
+  const txt = document.getElementById('syncText');
+  if(!el) return;
+  el.className = 'sync mono' + (ok ? '' : ' bad');
+  txt.textContent = ok ? 'saved on device' : 'storage error';
+}
+
+function nextCode(prefix){
+  counters[prefix] = (counters[prefix]||0) + 1;
+  persistCounters();
+  return prefix + '-' + String(counters[prefix]).padStart(3,'0');
+}
+
+function showToast(msg){
+  const root = document.getElementById('toastRoot');
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.textContent = msg;
+  root.appendChild(t);
+  setTimeout(()=>t.remove(), 2200);
+}
+
+/* ============ UTIL ============ */
+function catMeta(key){ return CATS.find(c=>c.key===key) || {key:'other',label:'Other',prefix:'OTH'}; }
+function findById(id){ return items.find(i=>i.id===id); }
+function findByCode(code){ return items.find(i=>i.code.toUpperCase()===code.toUpperCase()); }
+function binsList(){ return items.filter(i=>i.type==='bin'); }
+function uid(){ return 'x'+Math.random().toString(36).slice(2,10)+Date.now().toString(36); }
+
+/* ============ RENDER ROOT ============ */
+function render(){
+  const main = document.getElementById('main');
+  main.innerHTML = '';
+  if(currentTab==='scan') renderScan(main);
+  else if(currentTab==='list') renderList(main);
+  else if(currentTab==='add') renderAdd(main);
+  else if(currentTab==='labels') renderLabels(main);
+  else if(currentTab==='backup') renderBackup(main);
+  document.querySelectorAll('nav.tabs button').forEach(b=>{
+    b.classList.toggle('active', b.dataset.tab===currentTab);
+  });
+}
+
+document.querySelectorAll('nav.tabs button').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    stopScanner();
+    currentTab = b.dataset.tab;
+    render();
+  });
+});
+
+/* ============ SCAN TAB ============ */
+function renderScan(main){
+  const wrap = document.createElement('div');
+  wrap.innerHTML = `
+    <div class="panel" style="text-align:center;">
+      <h3>Scan QR Label</h3>
+      <div class="scanwrap"><video id="video" playsinline muted autoplay></video><div class="reticle"></div></div>
+      <div class="scanmsg" id="scanMsg">Point camera at an item or bin label</div>
+      <div class="scanmsg" style="font-size:11px;opacity:0.7;margin-top:2px;">Tip: fill most of the bracket with just the QR code, hold steady for a second, avoid glare on the label</div>
+      <canvas id="scanCanvas" style="display:none;"></canvas>
+    </div>
+    <div class="panel">
+      <h3>Or Enter Code Manually</h3>
+      <div style="display:flex;gap:8px;">
+        <input id="manualCode" placeholder="e.g. TRX-001" style="margin-bottom:0;">
+        <button class="btn sm" id="manualGo" style="width:auto;">Find</button>
+      </div>
+    </div>
+  `;
+  main.appendChild(wrap);
+  document.getElementById('manualGo').addEventListener('click', ()=>{
+    const code = document.getElementById('manualCode').value.trim();
+    if(!code) return;
+    const rec = findByCode(code);
+    if(rec) openDetail(rec.id);
+    else showToast('No record found for '+code);
+  });
+  startScanner();
+}
+
+let useNativeDetector = false;
+let barcodeDetector = null;
+let detectBusy = false;
+
+async function startScanner(){
+  const video = document.getElementById('video');
+  const canvas = document.getElementById('scanCanvas');
+  if(!video) return;
+  try{
+    scanStream = await navigator.mediaDevices.getUserMedia({
+      video:{
+        facingMode:{ideal:'environment'},
+        width:{ideal:1920}, height:{ideal:1080}
+      }
+    });
+    video.srcObject = scanStream;
+    await video.play();
+    // Best-effort: ask for continuous autofocus where the browser supports it.
+    // Wrapped in try/catch since iOS Safari ignores this silently rather than erroring.
+    try{
+      const track = scanStream.getVideoTracks()[0];
+      const caps = track.getCapabilities ? track.getCapabilities() : {};
+      if(caps.focusMode && caps.focusMode.includes('continuous')){
+        await track.applyConstraints({advanced:[{focusMode:'continuous'}]});
+      }
+    }catch(e){}
+
+    // Prefer the browser's native barcode engine (on iOS Safari this is backed by
+    // Apple's own Vision framework — the same engine the Camera app uses — which
+    // is far more reliable than the pure-JS jsQR fallback below.
+    useNativeDetector = false;
+    if('BarcodeDetector' in window){
+      try{
+        const formats = await BarcodeDetector.getSupportedFormats();
+        if(formats.includes('qr_code')){
+          barcodeDetector = new BarcodeDetector({formats:['qr_code']});
+          useNativeDetector = true;
+        }
+      }catch(e){}
+    }
+
+    scanLoopActive = true;
+    if(useNativeDetector){
+      document.getElementById('scanMsg').textContent = 'Point camera at an item or bin label';
+      nativeDetectLoop(video);
+    } else {
+      requestAnimationFrame(()=>scanLoop(video, canvas));
+    }
+  }catch(e){
+    document.getElementById('scanMsg').textContent = 'Camera unavailable — use manual entry below.';
+  }
+}
+function stopScanner(){
+  scanLoopActive = false;
+  detectBusy = false;
+  if(scanStream){ scanStream.getTracks().forEach(t=>t.stop()); scanStream=null; }
+}
+let lastHit = 0;
+
+async function nativeDetectLoop(video){
+  if(!scanLoopActive || currentTab!=='scan') return;
+  if(!detectBusy && video.readyState===video.HAVE_ENOUGH_DATA){
+    detectBusy = true;
+    try{
+      const codes = await barcodeDetector.detect(video);
+      if(codes && codes.length && Date.now()-lastHit>1200){
+        lastHit = Date.now();
+        handleScanResult(codes[0].rawValue);
+      }
+    }catch(e){}
+    detectBusy = false;
+  }
+  requestAnimationFrame(()=>nativeDetectLoop(video));
+}
+
+function scanLoop(video, canvas){
+  if(!scanLoopActive || currentTab!=='scan') return;
+  if(video.readyState===video.HAVE_ENOUGH_DATA){
+    canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.filter = 'contrast(1.35) brightness(1.05)';
+    ctx.drawImage(video,0,0,canvas.width,canvas.height);
+    const imgData = ctx.getImageData(0,0,canvas.width,canvas.height);
+    const code = jsQR(imgData.data, imgData.width, imgData.height, {inversionAttempts:'attemptBoth'});
+    if(code && code.data && Date.now()-lastHit>1200){
+      lastHit = Date.now();
+      handleScanResult(code.data);
+    }
+  }
+  requestAnimationFrame(()=>scanLoop(video, canvas));
+}
+function handleScanResult(data){
+  const rec = findByCode(data) || findById(data);
+  if(rec){
+    showToast('Found ' + rec.code);
+    if(navigator.vibrate) navigator.vibrate(60);
+    openDetail(rec.id);
+  } else {
+    document.getElementById('scanMsg').textContent = 'Unrecognized code: '+data;
+  }
+}
+
+/* ============ ADD TAB ============ */
+function renderAdd(main, prefill){
+  editingId = prefill && prefill.id ? prefill.id : null;
+  const d = prefill || {type:'item', category:'transceiver', qty:1};
+  const wrap = document.createElement('div');
+  wrap.innerHTML = `
+    <div class="panel">
+      <h3>${editingId? 'Edit Record' : 'New Record'}</h3>
+      <label class="fl">Record Type</label>
+      <select id="f_type">
+        <option value="item" ${d.type==='item'?'selected':''}>Item</option>
+        <option value="bin" ${d.type==='bin'?'selected':''}>Storage Bin / Box</option>
+      </select>
+
+      <div id="catWrap">
+        <label class="fl">Category</label>
+        <select id="f_category">
+          ${CATS.map(c=>`<option value="${c.key}" ${d.category===c.key?'selected':''}>${c.label}</option>`).join('')}
+        </select>
+      </div>
+
+      <label class="fl">Name / Description</label>
+      <input id="f_name" placeholder="e.g. Yaesu FT-891" value="${d.name||''}">
+
+      <div class="row2">
+        <div>
+          <label class="fl">Quantity</label>
+          <input id="f_qty" type="number" min="1" value="${d.qty||1}">
+        </div>
+        <div>
+          <label class="fl">Condition</label>
+          <input id="f_condition" placeholder="e.g. Good, New" value="${d.condition||''}">
+        </div>
+      </div>
+
+      <label class="fl">Label Size (for Niimbot B1)</label>
+      <select id="f_labelSize">
+        ${LABEL_SIZES.map(s=>`<option value="${s.key}" ${ (d.labelSize|| defaultLabelSize(d.type==='bin'?'bin':d.category)) ===s.key?'selected':''}>${s.label}</option>`).join('')}
+      </select>
+
+      <label class="fl">Stored In (Bin)</label>
+      <select id="f_bin">
+        <option value="">— none / top level —</option>
+        ${binsList().filter(b=>b.id!==editingId).map(b=>`<option value="${b.id}" ${d.binId===b.id?'selected':''}>${b.code} · ${b.name}</option>`).join('')}
+      </select>
+
+      <label class="fl">Location Note</label>
+      <input id="f_location" placeholder="e.g. Shelf 2, Garage" value="${d.location||''}">
+
+      <label class="fl">Notes</label>
+      <textarea id="f_notes" placeholder="serial #, freq range, etc.">${d.notes||''}</textarea>
+
+      <button class="btn" id="saveBtn" style="margin-top:6px;">${editingId? 'Save Changes' : 'Create & Generate Label'}</button>
+      ${editingId ? '<button class="btn danger" id="delBtn" style="margin-top:8px;">Delete Record</button>' : ''}
+    </div>
+  `;
+  main.appendChild(wrap);
+
+  const typeSel = document.getElementById('f_type');
+  const catSel = document.getElementById('f_category');
+  const sizeSel = document.getElementById('f_labelSize');
+  const catWrap = document.getElementById('catWrap');
+  let sizeTouched = !!d.labelSize && !!editingId;
+  sizeSel.addEventListener('change', ()=>{ sizeTouched = true; });
+  function syncDefaultSize(){
+    if(sizeTouched) return;
+    sizeSel.value = defaultLabelSize(typeSel.value==='bin' ? 'bin' : catSel.value);
+  }
+  function syncCatVisibility(){ catWrap.style.display = typeSel.value==='bin' ? 'none' : 'block'; syncDefaultSize(); }
+  typeSel.addEventListener('change', syncCatVisibility);
+  catSel.addEventListener('change', syncDefaultSize);
+  syncCatVisibility();
+
+  document.getElementById('saveBtn').addEventListener('click', ()=>{
+    const type = document.getElementById('f_type').value;
+    const category = document.getElementById('f_category').value;
+    const name = document.getElementById('f_name').value.trim();
+    if(!name){ showToast('Name is required'); return; }
+    const qty = parseInt(document.getElementById('f_qty').value)||1;
+    const condition = document.getElementById('f_condition').value.trim();
+    const binId = document.getElementById('f_bin').value || null;
+    const location = document.getElementById('f_location').value.trim();
+    const notes = document.getElementById('f_notes').value.trim();
+    const labelSize = document.getElementById('f_labelSize').value;
+
+    if(editingId){
+      const rec = findById(editingId);
+      Object.assign(rec, {type, category: type==='bin'?null:category, name, qty, condition, binId, location, notes, labelSize});
+      persist();
+      showToast('Saved ' + rec.code);
+      editingId = null;
+      currentTab = 'list'; render();
+    } else {
+      const prefix = type==='bin' ? BIN_PREFIX : catMeta(category).prefix;
+      const code = nextCode(prefix);
+      const rec = {id: uid(), code, type, category: type==='bin'?null:category, name, qty, condition, binId, location, notes, labelSize, createdAt: new Date().toISOString()};
+      items.push(rec);
+      persist();
+      showToast('Created ' + code);
+      openLabelPreview(rec);
+    }
+  });
+
+  if(editingId){
+    document.getElementById('delBtn').addEventListener('click', ()=>{
+      if(!confirm('Delete this record permanently?')) return;
+      items = items.filter(i=>i.id!==editingId);
+      persist();
+      editingId = null;
+      closeModal();
+      currentTab='list'; render();
+    });
+  }
+}
+
+/* ============ LIST TAB ============ */
+let listFilter = 'all';
+let listSearch = '';
+function renderList(main){
+  const wrap = document.createElement('div');
+  wrap.innerHTML = `
+    <div class="searchbar">
+      <input id="searchInput" placeholder="Search name, code, location..." value="${listSearch}">
+    </div>
+    <div class="filterrow" id="filterRow"></div>
+    <div id="listResults"></div>
+  `;
+  main.appendChild(wrap);
+  const filterRow = document.getElementById('filterRow');
+  const chips = [{key:'all',label:'All'},{key:'bin',label:'Bins'},...CATS.map(c=>({key:c.key,label:c.label}))];
+  chips.forEach(c=>{
+    const el = document.createElement('div');
+    el.className = 'filterchip' + (listFilter===c.key?' active':'');
+    el.textContent = c.label;
+    el.addEventListener('click', ()=>{ listFilter=c.key; renderList(document.getElementById('main')); document.getElementById('main').innerHTML=''; main2(); });
+    filterRow.appendChild(el);
+  });
+  function main2(){ const m=document.getElementById('main'); renderList(m); }
+  document.getElementById('searchInput').addEventListener('input', (e)=>{
+    listSearch = e.target.value;
+    renderResultsOnly();
+  });
+  renderResultsOnly();
+}
+function renderResultsOnly(){
+  const out = document.getElementById('listResults');
+  if(!out) return;
+  let filtered = items.filter(i=>{
+    if(listFilter==='bin' && i.type!=='bin') return false;
+    if(listFilter!=='all' && listFilter!=='bin' && i.category!==listFilter) return false;
+    if(listSearch){
+      const s = listSearch.toLowerCase();
+      const hay = (i.name+' '+i.code+' '+(i.location||'')+' '+(i.notes||'')).toLowerCase();
+      if(!hay.includes(s)) return false;
+    }
+    return true;
+  }).sort((a,b)=> (b.createdAt||'').localeCompare(a.createdAt||''));
+
+  if(filtered.length===0){
+    out.innerHTML = `<div class="empty"><div class="big">NO RECORDS</div>Add items or bins, or adjust your filters.</div>`;
+    return;
+  }
+  out.innerHTML = filtered.map(i=>{
+    const bin = i.binId ? findById(i.binId) : null;
+    const catP = i.type==='bin' ? 'bin' : 'cat-'+i.category;
+    const catLabel = i.type==='bin' ? 'BIN' : catMeta(i.category).label;
+    const ls = labelSizeMeta(i.labelSize || defaultLabelSize(i.type==='bin'?'bin':i.category));
+    return `<div class="itemcard" data-id="${i.id}">
+      <div class="ic-left">
+        <div class="ic-name">${escapeHtml(i.name)}</div>
+        <div class="ic-meta">${i.code} ${bin? '· in '+bin.code : ''} ${i.location? '· '+escapeHtml(i.location):''} ${i.qty>1?'· x'+i.qty:''} · ${ls.w}×${ls.h}mm</div>
+      </div>
+      <span class="pill ${catP}">${catLabel}</span>
+    </div>`;
+  }).join('');
+  out.querySelectorAll('.itemcard').forEach(el=>{
+    el.addEventListener('click', ()=> openDetail(el.dataset.id));
+  });
+}
+function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+/* ============ DETAIL MODAL ============ */
+function openDetail(id){
+  const rec = findById(id);
+  if(!rec) return;
+  const bin = rec.binId ? findById(rec.binId) : null;
+  const contents = rec.type==='bin' ? items.filter(i=>i.binId===id) : [];
+  const root = document.getElementById('modalRoot');
+  root.innerHTML = `
+    <div class="modal-bg" id="modalBg">
+      <div class="modal">
+        <div class="closebar"><span id="closeX">close ✕</span></div>
+        <h2>${escapeHtml(rec.name)}</h2>
+        <div class="codebadge">${rec.code}</div>
+        <div style="text-align:center;margin:16px 0;" id="qrHolder"></div>
+        <div class="panel" style="margin-top:8px;">
+          <div class="ic-meta" style="font-size:12px;line-height:1.8;">
+            ${rec.type==='bin' ? 'Type: Storage Bin' : 'Category: '+catMeta(rec.category).label}<br>
+            ${rec.qty? 'Qty: '+rec.qty+'<br>':''}
+            ${rec.condition? 'Condition: '+escapeHtml(rec.condition)+'<br>':''}
+            ${bin? 'Stored in: '+bin.code+' ('+escapeHtml(bin.name)+')<br>':''}
+            ${rec.location? 'Location: '+escapeHtml(rec.location)+'<br>':''}
+            Label size: ${(()=>{const s=labelSizeMeta(rec.labelSize||defaultLabelSize(rec.type==='bin'?'bin':rec.category)); return s.w+'×'+s.h+'mm ('+s.label.split('· ')[1]+')';})()}<br>
+            ${rec.notes? 'Notes: '+escapeHtml(rec.notes)+'<br>':''}
+            Added: ${new Date(rec.createdAt).toLocaleDateString()}
+          </div>
+        </div>
+        ${contents.length? `<div class="panel"><h3>Contents (${contents.length})</h3>${contents.map(c=>`<div class="ic-meta" style="margin-bottom:4px;">${c.code} — ${escapeHtml(c.name)}</div>`).join('')}</div>`:''}
+        <button class="btn secondary" id="dlQrBtn" style="margin-top:6px;">Save QR as Image</button>
+        <button class="btn secondary" id="editBtn" style="margin-top:8px;">Edit</button>
+      </div>
+    </div>
+  `;
+  new QRCode(document.getElementById('qrHolder'), {text: rec.code, width:140, height:140, colorDark:'#15181a', colorLight:'#ffffff'});
+  document.getElementById('closeX').addEventListener('click', closeModal);
+  document.getElementById('modalBg').addEventListener('click', (e)=>{ if(e.target.id==='modalBg') closeModal(); });
+  document.getElementById('editBtn').addEventListener('click', ()=>{
+    closeModal();
+    currentTab='add';
+    const main = document.getElementById('main');
+    main.innerHTML='';
+    renderAdd(main, rec);
+  });
+  document.getElementById('dlQrBtn').addEventListener('click', ()=>{
+    downloadQrPng(rec.code, rec.code + '-qr.png');
+  });
+}
+function closeModal(){ document.getElementById('modalRoot').innerHTML=''; }
+
+async function shareOrDownloadFile(blob, filename, mimeType){
+  try{
+    const file = new File([blob], filename, {type: mimeType});
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      await navigator.share({files:[file], title: filename});
+      showToast('Saved via share sheet');
+      return;
+    }
+  }catch(e){
+    if(e && e.name === 'AbortError') return; // user cancelled the share sheet
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+  showToast('Saved to Files app → Downloads (check Browse tab)');
+}
+
+function downloadQrPng(text, filename){
+  const tmp = document.createElement('div');
+  tmp.style.position='fixed'; tmp.style.left='-9999px';
+  document.body.appendChild(tmp);
+  new QRCode(tmp, {text, width:600, height:600, colorDark:'#000000', colorLight:'#ffffff'});
+  setTimeout(()=>{
+    const canvas = tmp.querySelector('canvas');
+    if(canvas){
+      canvas.toBlob(blob=>{
+        if(blob) shareOrDownloadFile(blob, filename, 'image/png');
+      }, 'image/png');
+    }
+    tmp.remove();
+  }, 150);
+}
+
+function openLabelPreview(rec){
+  const root = document.getElementById('modalRoot');
+  root.innerHTML = `
+    <div class="modal-bg" id="modalBg2">
+      <div class="modal" style="text-align:center;">
+        <div class="closebar"><span id="closeX2">close ✕</span></div>
+        <h2>Label Ready</h2>
+        <div id="qrHolder2" style="margin:14px 0;"></div>
+        <div class="codebadge" style="font-size:14px;">${rec.code}</div>
+        <div class="ic-meta" style="margin-top:4px;">${escapeHtml(rec.name)}</div>
+        <button class="btn secondary" id="goLabels" style="margin-top:16px;">Go to Labels to Print</button>
+        <button class="btn" id="doneBtn" style="margin-top:8px;">Done</button>
+      </div>
+    </div>
+  `;
+  new QRCode(document.getElementById('qrHolder2'), {text: rec.code, width:160, height:160, colorDark:'#15181a', colorLight:'#ffffff'});
+  document.getElementById('closeX2').addEventListener('click', ()=>{ closeModal(); currentTab='list'; render(); });
+  document.getElementById('doneBtn').addEventListener('click', ()=>{ closeModal(); currentTab='list'; render(); });
+  document.getElementById('goLabels').addEventListener('click', ()=>{ closeModal(); currentTab='labels'; render(); });
+}
+
+/* ============ LABELS TAB ============ */
+function renderLabels(main){
+  const wrap = document.createElement('div');
+  wrap.innerHTML = `
+    <div class="panel">
+      <h3>Printing with the Niimbot B1</h3>
+      <div class="ic-meta" style="line-height:1.7;">
+        The B1 connects over Bluetooth straight to the Niimbot app — it can't receive a regular browser print job. Use one of the two methods below. <b>Each batch must be one label size</b> — set up one template per size in the app, since a single Excel import only fills one template at a time.
+      </div>
+    </div>
+    <div class="panel">
+      <h3>Method 1 · Batch via Excel/CSV (fastest)</h3>
+      <div class="ic-meta" style="margin-bottom:10px;line-height:1.6;">
+        Pick a size below, then in the Niimbot app: New Label → set that size → add a QR element and a text element → tap <b>Excel Import</b> → bind QR to "code" and text to "name" → it generates one label per row.
+      </div>
+      <label class="fl">Label Size</label>
+      <select id="sizeSelect">
+        ${LABEL_SIZES.map(s=>`<option value="${s.key}">${s.label} (${s.w}×${s.h}mm)</option>`).join('')}
+      </select>
+      <div class="filterrow" id="labelFilter"></div>
+      <div id="labelPicker"></div>
+      <button class="btn" id="exportSelectedBtn" style="margin-top:12px;">Export Selected as CSV</button>
+    </div>
+    <div class="panel">
+      <h3>Method 2 · One QR Image at a Time</h3>
+      <div class="ic-meta" style="margin-bottom:10px;">Open any record's detail view and tap "Save QR as Image" — it saves a PNG to your Photos. In the Niimbot app, add an Image element to your label and import it from your camera roll. Good for one-off labels.</div>
+    </div>
+  `;
+  main.appendChild(wrap);
+  const chips = [{key:'all',label:'All'},{key:'bin',label:'Bins'},...CATS.map(c=>({key:c.key,label:c.label}))];
+  let filt = 'all';
+  let sizeKey = LABEL_SIZES[2].key;
+  const selected = new Set();
+  const sizeSelect = document.getElementById('sizeSelect');
+  sizeSelect.value = sizeKey;
+  sizeSelect.addEventListener('change', ()=>{ sizeKey = sizeSelect.value; selected.clear(); draw(); });
+  const filterRow = document.getElementById('labelFilter');
+  function recordSize(i){ return i.labelSize || defaultLabelSize(i.type==='bin'?'bin':i.category); }
+  function draw(){
+    filterRow.innerHTML='';
+    chips.forEach(c=>{
+      const el = document.createElement('div');
+      el.className='filterchip'+(filt===c.key?' active':'');
+      el.textContent=c.label;
+      el.addEventListener('click', ()=>{ filt=c.key; draw(); });
+      filterRow.appendChild(el);
+    });
+    const picker = document.getElementById('labelPicker');
+    let list = items.filter(i=> recordSize(i)===sizeKey)
+                     .filter(i=> filt==='all' || (filt==='bin'? i.type==='bin' : i.category===filt));
+    if(list.length===0){ picker.innerHTML = `<div class="empty">No records at this label size${filt!=='all'?' in this filter':''}. Set a record's size on the Add/Edit screen.</div>`; return; }
+    picker.innerHTML = `<label style="display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px solid var(--line);font-size:13px;color:var(--amber);">
+        <input type="checkbox" id="selectAllCb" style="width:auto;margin:0;"> Select all (${list.length})
+      </label>` + list.map(i=>`
+      <label style="display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px solid var(--line);font-size:13.5px;">
+        <input type="checkbox" data-id="${i.id}" ${selected.has(i.id)?'checked':''} style="width:auto;margin:0;">
+        <span class="codebadge">${i.code}</span> ${escapeHtml(i.name)}
+      </label>`).join('');
+    picker.querySelectorAll('input[data-id]').forEach(cb=>{
+      cb.addEventListener('change', ()=>{
+        if(cb.checked) selected.add(cb.dataset.id); else selected.delete(cb.dataset.id);
+      });
+    });
+    document.getElementById('selectAllCb').addEventListener('change', (e)=>{
+      list.forEach(i=> e.target.checked ? selected.add(i.id) : selected.delete(i.id));
+      draw();
+    });
+  }
+  draw();
+  document.getElementById('exportSelectedBtn').addEventListener('click', ()=>{
+    if(selected.size===0){ showToast('Select at least one record'); return; }
+    const sm = labelSizeMeta(sizeKey);
+    const headers = ['code','name','category','location'];
+    const rows = [...selected].map(id=>{
+      const i = findById(id);
+      return [i.code, i.name, i.type==='bin'?'BIN':catMeta(i.category).label, i.location||'']
+        .map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',');
+    });
+    const csv = headers.join(',')+'\n'+rows.join('\n');
+    const blob = new Blob([csv], {type:'text/csv'});
+    shareOrDownloadFile(blob, `niimbot-labels-${sm.w}x${sm.h}mm-${new Date().toISOString().slice(0,10)}.csv`, 'text/csv');
+  });
+}
+
+/* ============ BACKUP TAB ============ */
+function renderBackup(main){
+  const wrap = document.createElement('div');
+  const total = items.length;
+  const bins = items.filter(i=>i.type==='bin').length;
+  wrap.innerHTML = `
+    <div class="panel">
+      <h3>Storage Status</h3>
+      <div class="ic-meta" style="line-height:1.9;">
+        Records: ${total} (${bins} bins, ${total-bins} items)<br>
+        Storage: <span style="color:${storageOK?'var(--led)':'var(--red)'}">${storageOK?'saved on this device':'storage error — see browser settings'}</span>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>Export Backup (CSV)</h3>
+      <div class="ic-meta" style="margin-bottom:10px;line-height:1.6;">This data lives only on this device/browser — it's not synced anywhere automatically. Export regularly, especially before switching phones, clearing Safari data, or reinstalling. Save the CSV to iCloud Drive or Google Sheets as your real backup.</div>
+      <button class="btn" id="exportBtn">Export CSV</button>
+    </div>
+    <div class="panel">
+      <h3>Import / Restore</h3>
+      <div class="ic-meta" style="margin-bottom:10px;">Restore from a previously exported CSV. This replaces current data on this device.</div>
+      <input type="file" id="importFile" accept=".csv">
+      <button class="btn secondary" id="importBtn" style="margin-top:4px;">Import CSV</button>
+    </div>
+    <div class="panel">
+      <h3 style="color:var(--muted);">About This Install</h3>
+      <div class="ic-meta" style="line-height:1.7;">Installed to your Home Screen, this runs fully offline — no signal needed, including the camera scanner. Data stays local to this device only; it won't appear if you open the same link on another phone. Use CSV export/import to move data between devices.</div>
+    </div>
+  `;
+  main.appendChild(wrap);
+  document.getElementById('exportBtn').addEventListener('click', exportCSV);
+  document.getElementById('importBtn').addEventListener('click', importCSV);
+}
+
+function exportCSV(){
+  const headers = ['id','code','type','category','name','qty','condition','binCode','location','notes','labelSize','createdAt'];
+  const rows = items.map(i=>{
+    const bin = i.binId ? findById(i.binId) : null;
+    return [i.id,i.code,i.type,i.category||'',i.name,i.qty||'',i.condition||'', bin?bin.code:'', i.location||'', (i.notes||'').replace(/\n/g,' '), i.labelSize||'', i.createdAt]
+      .map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',');
+  });
+  const csv = headers.join(',')+'\n'+rows.join('\n');
+  const blob = new Blob([csv], {type:'text/csv'});
+  shareOrDownloadFile(blob, 'shack-inventory-'+new Date().toISOString().slice(0,10)+'.csv', 'text/csv');
+}
+
+function importCSV(){
+  const fileInput = document.getElementById('importFile');
+  const file = fileInput.files[0];
+  if(!file){ showToast('Choose a CSV file first'); return; }
+  if(!confirm('This will replace all current records. Continue?')) return;
+  const reader = new FileReader();
+  reader.onload = (e)=>{
+    try{
+      const text = e.target.result;
+      const lines = text.split(/\r?\n/).filter(l=>l.trim().length);
+      const headers = parseCSVLine(lines[0]);
+      const codeToId = {};
+      const newItems = lines.slice(1).map(line=>{
+        const vals = parseCSVLine(line);
+        const obj = {};
+        headers.forEach((h,idx)=> obj[h]=vals[idx]);
+        const id = obj.id || uid();
+        codeToId[obj.code] = id;
+        return {
+          id, code:obj.code, type:obj.type, category:obj.category||null,
+          name:obj.name, qty: parseInt(obj.qty)||1, condition:obj.condition||'',
+          binId: null, _binCode: obj.binCode||'', location:obj.location||'', notes:obj.notes||'',
+          labelSize: obj.labelSize || '',
+          createdAt: obj.createdAt || new Date().toISOString()
+        };
+      });
+      newItems.forEach(it=>{ if(it._binCode) it.binId = codeToId[it._binCode] || null; delete it._binCode; });
+      items = newItems;
+      persist();
+      // rebuild counters
+      counters = {};
+      items.forEach(it=>{
+        const m = it.code.match(/^([A-Z]+)-(\d+)$/);
+        if(m){ counters[m[1]] = Math.max(counters[m[1]]||0, parseInt(m[2])); }
+      });
+      persistCounters();
+      showToast('Imported '+items.length+' records');
+      currentTab='list'; render();
+    }catch(err){
+      showToast('Import failed — check file format');
+    }
+  };
+  reader.readAsText(file);
+}
+function parseCSVLine(line){
+  const out = []; let cur=''; let inQ=false;
+  for(let i=0;i<line.length;i++){
+    const c = line[i];
+    if(inQ){
+      if(c==='"' && line[i+1]==='"'){ cur+='"'; i++; }
+      else if(c==='"'){ inQ=false; }
+      else cur+=c;
+    } else {
+      if(c==='"') inQ=true;
+      else if(c===','){ out.push(cur); cur=''; }
+      else cur+=c;
+    }
+  }
+  out.push(cur);
+  return out;
+}
+
+/* ============ BOOT ============ */
+loadAll();
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('./sw.js').catch(()=>{});
+  });
+}
+</script>
+</body>
+</html>
