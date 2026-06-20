@@ -310,7 +310,7 @@ function renderScan(main){
       <button class="btn secondary" id="captureBtn" style="margin-top:12px;">📸 Capture & Try Hard</button>
       <div class="scanmsg mono" id="engineLabel" style="font-size:10px;opacity:0.5;margin-top:10px;">Engine: detecting…</div>
       <div class="scanmsg mono" id="resLabel" style="font-size:9px;opacity:0.4;margin-top:2px;">Camera: —</div>
-      <div class="scanmsg mono" style="font-size:9px;opacity:0.35;margin-top:2px;">Build: 2026-06-20-capturefix-v5</div>
+      <div class="scanmsg mono" style="font-size:9px;opacity:0.35;margin-top:2px;">Build: 2026-06-20-errorlog-v6</div>
       <canvas id="scanCanvas" style="display:none;"></canvas>
     </div>
     <div class="panel">
@@ -454,7 +454,7 @@ async function captureAndTryHard(){
       msgEl.textContent = 'That took too long — try manual entry below, or try again.';
       showToast('Capture timed out');
     } else {
-      msgEl.textContent = 'Something went wrong — try manual entry below, or try again.';
+      msgEl.textContent = 'Error: ' + (e && e.message ? e.message : 'unknown') + ' — try manual entry below.';
       showToast('Capture failed unexpectedly');
     }
   }finally{
