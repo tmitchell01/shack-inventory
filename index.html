@@ -307,8 +307,10 @@ function renderScan(main){
       <div class="scanwrap"><video id="video" playsinline muted autoplay></video><div class="reticle"></div></div>
       <div class="scanmsg" id="scanMsg">Point camera at an item or bin label</div>
       <div class="scanmsg" style="font-size:11px;opacity:0.7;margin-top:2px;">Tip: fill most of the bracket with just the QR code, hold steady for a second, avoid glare on the label</div>
-      <div class="scanmsg mono" id="engineLabel" style="font-size:10px;opacity:0.5;margin-top:6px;">Engine: detecting…</div>
-      <div class="scanmsg mono" style="font-size:9px;opacity:0.35;margin-top:2px;">Build: 2026-06-20-cachefix-v3</div>
+      <button class="btn secondary" id="captureBtn" style="margin-top:12px;">📸 Capture & Try Hard</button>
+      <div class="scanmsg mono" id="engineLabel" style="font-size:10px;opacity:0.5;margin-top:10px;">Engine: detecting…</div>
+      <div class="scanmsg mono" id="resLabel" style="font-size:9px;opacity:0.4;margin-top:2px;">Camera: —</div>
+      <div class="scanmsg mono" style="font-size:9px;opacity:0.35;margin-top:2px;">Build: 2026-06-20-capture-v4</div>
       <canvas id="scanCanvas" style="display:none;"></canvas>
     </div>
     <div class="panel">
@@ -327,6 +329,7 @@ function renderScan(main){
     if(rec) openDetail(rec.id);
     else showToast('No record found for '+code);
   });
+  document.getElementById('captureBtn').addEventListener('click', captureAndTryHard);
   startScanner();
 }
 
@@ -348,6 +351,8 @@ async function startScanner(){
     });
     video.srcObject = scanStream;
     await video.play();
+    const resEl = document.getElementById('resLabel');
+    if(resEl) resEl.textContent = `Camera: ${video.videoWidth}×${video.videoHeight}`;
     // Best-effort: ask for continuous autofocus where the browser supports it.
     // Wrapped in try/catch since iOS Safari ignores this silently rather than erroring.
     try{
@@ -390,6 +395,104 @@ function updateEngineLabel(){
   const el = document.getElementById('engineLabel');
   if(!el) return;
   el.textContent = nativeAvailable ? 'Engine: Apple Vision + jsQR' : 'Engine: jsQR only';
+}
+
+function grabRawFrame(video){
+  const w = video.videoWidth, h = video.videoHeight;
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d', {willReadFrequently:true});
+  ctx.drawImage(video, 0, 0, w, h);
+  const frame = ctx.getImageData(0,0,w,h);
+  const gray = new Uint8ClampedArray(w*h);
+  for(let i=0,p=0;i<frame.data.length;i+=4,p++){
+    gray[p] = frame.data[i]*0.299 + frame.data[i+1]*0.587 + frame.data[i+2]*0.114;
+  }
+  return {gray, w, h, canvas:c};
+}
+
+function sharpnessScore(gray, w, h){
+  // Cheap focus-quality estimate: sum of absolute differences between
+  // neighboring pixels. Blurry frames have less local contrast/edges.
+  let score = 0;
+  const step = 4; // sample every 4th pixel for speed
+  for(let y=0; y<h-1; y+=step){
+    const row = y*w, nrow = (y+1)*w;
+    for(let x=0; x<w-1; x+=step){
+      score += Math.abs(gray[row+x]-gray[row+x+1]) + Math.abs(gray[row+x]-gray[nrow+x]);
+    }
+  }
+  return score;
+}
+
+async function captureAndTryHard(){
+  const video = document.getElementById('video');
+  const msgEl = document.getElementById('scanMsg');
+  const btn = document.getElementById('captureBtn');
+  if(!video || video.readyState !== video.HAVE_ENOUGH_DATA){
+    showToast('Camera not ready yet');
+    return;
+  }
+  btn.disabled = true;
+  btn.textContent = '📸 Capturing…';
+
+  // Burst of frames a little apart in time — gives a few chances to dodge
+  // hand-shake/motion blur, since the live feed often differs frame-to-frame.
+  const frames = [];
+  for(let i=0;i<4;i++){
+    frames.push(grabRawFrame(video));
+    if(i<3) await new Promise(r=>setTimeout(r, 140));
+  }
+  // Try the sharpest-looking frame first, then fall back through the rest.
+  frames.sort((a,b)=> sharpnessScore(b.gray,b.w,b.h) - sharpnessScore(a.gray,a.w,a.h));
+
+  const paramSets = [
+    null, // raw, uncorrected — try as-is first
+    {tiles:12, clip:3.0},
+    {tiles:8,  clip:3.0},
+    {tiles:10, clip:2.0},
+    {tiles:16, clip:4.0},
+    {tiles:6,  clip:2.0},
+  ];
+
+  msgEl.textContent = 'Trying several enhancement passes…';
+  let found = null;
+  outer:
+  for(const f of frames){
+    for(const params of paramSets){
+      let data;
+      if(params === null){
+        const rgba = new Uint8ClampedArray(f.w*f.h*4);
+        for(let p=0,i=0;p<f.w*f.h;p++,i+=4){ rgba[i]=rgba[i+1]=rgba[i+2]=f.gray[p]; rgba[i+3]=255; }
+        data = rgba;
+      } else {
+        const corrected = claheCorrect(f.gray, f.w, f.h, params.tiles, params.tiles, params.clip);
+        const rgba = new Uint8ClampedArray(f.w*f.h*4);
+        for(let p=0,i=0;p<f.w*f.h;p++,i+=4){ rgba[i]=rgba[i+1]=rgba[i+2]=corrected[p]; rgba[i+3]=255; }
+        data = rgba;
+      }
+      const code = jsQR(data, f.w, f.h, {inversionAttempts:'attemptBoth'});
+      if(code && code.data){ found = code.data; break outer; }
+      await new Promise(r=>setTimeout(r, 0)); // yield so the UI doesn't lock up
+    }
+    // Also give the native engine one shot per frame, if available.
+    if(nativeAvailable){
+      try{
+        const codes = await barcodeDetector.detect(f.canvas);
+        if(codes && codes.length){ found = codes[0].rawValue; break; }
+      }catch(e){}
+    }
+  }
+
+  btn.disabled = false;
+  btn.textContent = '📸 Capture & Try Hard';
+  if(found){
+    msgEl.textContent = 'Point camera at an item or bin label';
+    handleScanResult(found);
+  } else {
+    msgEl.textContent = 'Still no luck — try manual entry below, or move slightly closer/farther.';
+    showToast('No code found in capture');
+  }
 }
 let lastHit = 0;
 
