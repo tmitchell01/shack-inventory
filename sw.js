@@ -1,4 +1,4 @@
-const CACHE_NAME = 'shack-inventory-v2';
+const CACHE_NAME = 'shack-inventory-v3';
 const APP_SHELL = [
   './index.html',
   './manifest.json',
@@ -44,7 +44,7 @@ self.addEventListener('fetch', (event) => {
 
   if (isHtmlOrNav) {
     event.respondWith(
-      fetch(event.request).then((response) => {
+      fetch(event.request, { cache: 'no-store' }).then((response) => {
         if (response && response.status === 200) {
           const copy = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
